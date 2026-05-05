@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Birthday Wishes</title>
+  <style>
+    body { background: linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%); min-height:100vh; display:flex; align-items:center; justify-content:center; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .container { background:#fff; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.1); width:100%; max-width:680px; padding:28px; }
+    h1 { text-align:center; margin-bottom:12px; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .row input { flex:1; padding:10px; border:1px solid #cfd8dc; border-radius:8px; }
+    .muted { color:#607d8b; font-size:12px; }
+    .info { margin:10px 0; }
+    .upcoming { background:#f1f8e9; border:1px solid #c5e1a5; border-radius:10px; padding:14px; margin:14px 0; }
+    .wish-box { margin-top:12px; }
+    textarea { width:100%; min-height:100px; resize:vertical; padding:10px; border:1px solid #cfd8dc; border-radius:8px; }
+    button { margin-top:10px; padding:10px 16px; border:none; border-radius:8px; background:#4a6fa5; color:#fff; font-weight:600; cursor:pointer; }
+    button:hover { background:#3a5980; }
+    .next-btn { background:#388e3c; margin-left:8px; }
+    .next-btn:hover { background:#2e7d32; }
+    .status { margin-top:8px; min-height:18px; font-size:13px; }
+    .ok { color:#2e7d32; }
+    .err { color:#c62828; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🎂 Birthday Wishes</h1>
+
+  <!-- Login -->
+  <div id="login-section">
+    <p>Enter your name to log in:</p>
+    <div class="row">
+      <input id="login-input" type="text" placeholder="Your name (e.g., Wanshu)" />
+      <button id="login-btn">Login</button>
+    </div>
+    <p class="muted">Tip: must match one of the team names exactly.</p>
+  </div>
+
+  <!-- Main -->
+  <div id="main-section" style="display:none;">
+    <div class="info">Logged in as: <strong id="current-user"></strong></div>
+    <div id="upcoming" class="upcoming"></div>
+
+    <div class="wish-box" id="wish-box" style="display:none;">
+      <p>Write a wish for <strong id="wish-target"></strong>:</p>
+      <textarea id="wish-input" placeholder="Type your message..."></textarea><br/>
+      <button id="send-btn">Send Wish</button>
+      <button class="next-btn" id="next-btn">Next ➡</button>
+      <div id="wish-status" class="status"></div>
+    </div>
+  </div>
+
+  <!-- Hidden HTML form that posts to Google Forms (bypasses CORS/OAuth) -->
+  <iframe name="hidden_iframe" id="hidden_iframe" style="display:none;"></iframe>
+  <form id="gform"
+        action="https://docs.google.com/forms/d/e/1FAIpQLSc5EBB2OQkdqUIFydpGXxqO87449Qf6KvATuzzKn9BHsebFKw/formResponse"
+        method="POST" target="hidden_iframe" style="display:none;">
+    <input type="text" name="entry.842346858"   id="f_author" />
+    <input type="text" name="entry.1975425142"  id="f_target" />
+    <textarea          name="entry.1799827460"  id="f_wish"></textarea>
+    <input type="text" name="entry.877874361"   id="f_bday" />
+  </form>
+</div>
+
+<script>
+/* ========= TEAM LIST ========= */
+const groupMembers = [
+  { name: "Florentina", birthday: "01-15" },
+  { name: "Caio",       birthday: "02-24" },
+  { name: "Vy",         birthday: "03-22" },
+  { name: "Masha",      birthday: "03-23" },
+  { name: "Finola",     birthday: "04-25" },
+  { name: "Wanshu",     birthday: "04-29" },
+  { name: "Marten",     birthday: "05-17" },
+  { name: "Lauren",     birthday: "08-21" },
+  { name: "Eliane",     birthday: "08-30" },
+  { name: "Ferdaous",   birthday: "10-08" },
+  { name: "Sean",       birthday: "10-09" },
+  { name: "Petros",     birthday: "10-17" },
+  { name: "Gabor",      birthday: "11-19" }
+];
+
+let currentUser = null;
+let upcomingList = [];
+let currentIndex = 0;
+
+/* ======== HELPERS ======== */
+function buildUpcomingList() {
+  const today = new Date();
+  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diffs = groupMembers.map(m => {
+    const [mm,dd] = m.birthday.split("-").map(Number);
+    let next = new Date(today.getFullYear(), mm-1, dd);
+    if (next < base) next = new Date(today.getFullYear()+1, mm-1, dd);
+    const days = Math.round((next - base)/(1000*60*60*24));
+    return { member: m, nextDate: next, days };
+  }).sort((a,b)=>a.days-b.days);
+  return diffs.filter(d => d.member.name !== currentUser.name);
+}
+
+function showUpcoming() {
+  const next = upcomingList[currentIndex];
+  const label = new Intl.DateTimeFormat("en-US",{month:"long",day:"numeric"}).format(next.nextDate);
+  document.getElementById("upcoming").innerHTML =
+    `🎈 Upcoming birthday: <strong>${next.member.name}</strong> on <em>${label}</em> (in ${next.days} day${next.days!==1?'s':''}).`;
+  document.getElementById("wish-target").textContent = next.member.name;
+  document.getElementById("wish-box").style.display = "block";
+  document.getElementById("wish-status").textContent = '';
+  document.getElementById("wish-status").className = 'status';
+}
+
+function loginUser() {
+  const val = document.getElementById("login-input").value.trim();
+  const found = groupMembers.find(m => m.name.toLowerCase() === val.toLowerCase());
+  if (!found) { alert("User not found. Check the spelling."); return; }
+  currentUser = found;
+  document.getElementById("current-user").textContent = currentUser.name;
+  document.getElementById("login-section").style.display = "none";
+  document.getElementById("main-section").style.display = "block";
+  upcomingList = buildUpcomingList();
+  currentIndex = 0;
+  showUpcoming();
+}
+
+function showNext() {
+  currentIndex = (currentIndex + 1) % upcomingList.length;
+  showUpcoming();
+}
+
+/* ======== GOOGLE FORM SUBMIT (no OAuth) ======== */
+function submitWish() {
+  const ta = document.getElementById('wish-input');
+  const wish = ta.value.trim();
+  if (!wish) { alert('Please enter a message.'); return; }
+
+  const current = upcomingList[currentIndex];
+
+  // Local YYYY-MM-DD for Europe/Luxembourg to avoid UTC off-by-one
+  const iso = current.nextDate.toLocaleDateString('en-CA', { timeZone: 'Europe/Luxembourg' });
+
+  // Fill hidden form inputs
+  document.getElementById('f_author').value = currentUser.name;
+  document.getElementById('f_target').value = current.member.name;
+  document.getElementById('f_wish').value   = wish;
+  document.getElementById('f_bday').value   = iso;
+
+  const status = document.getElementById('wish-status');
+  status.textContent = 'Sending…';
+  status.className = 'status';
+
+  // Submit to Google Forms without leaving the page
+  document.getElementById('gform').submit();
+
+  // Show success after iframe loads (best-effort)
+  const iframe = document.getElementById('hidden_iframe');
+  const onLoad = () => {
+    status.textContent = 'Saved ✓';
+    status.className = 'status ok';
+    ta.value = '';
+    iframe.removeEventListener('load', onLoad);
+  };
+  iframe.addEventListener('load', onLoad);
+
+  // Fallback timer in case load event doesn’t fire
+  setTimeout(() => {
+    if (status.textContent === 'Sending…') {
+      status.textContent = 'Saved ✓ (fallback)';
+      status.className = 'status ok';
+      ta.value = '';
+    }
+  }, 2000);
+}
+
+/* ======== EVENTS ======== */
+document.getElementById('login-btn').addEventListener('click', loginUser);
+document.getElementById('next-btn').addEventListener('click', showNext);
+document.getElementById('send-btn').addEventListener('click', submitWish);
+document.getElementById('login-input').addEventListener('keydown', e => { if (e.key==='Enter') loginUser(); });
+</script>
+</body>
+</html>
